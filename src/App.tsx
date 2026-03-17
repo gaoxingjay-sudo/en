@@ -34,6 +34,7 @@ export default function App() {
   // Upload States
   const [isDragging, setIsDragging] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>('idle');
+  const [uploadError, setUploadError] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -281,91 +282,114 @@ export default function App() {
 
     setUploadStatus('processing');
     setProgress(0);
+    setUploadError('');
 
     const progressInterval = setInterval(() => {
       setProgress((prev) => (prev < 90 ? prev + Math.floor(Math.random() * 10) : prev));
     }, 300);
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64DataUrl = reader.result as string;
-        const base64String = base64DataUrl.split(',')[1];
-        const mimeType = file.type;
+    try {
+      // Resize image before sending to API to prevent payload too large errors
+      const resizedBase64 = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Max dimension 2000px
+          const MAX_DIMENSION = 2000;
+          if (width > height && width > MAX_DIMENSION) {
+            height = Math.round((height * MAX_DIMENSION) / width);
+            width = MAX_DIMENSION;
+          } else if (height > MAX_DIMENSION) {
+            width = Math.round((width * MAX_DIMENSION) / height);
+            height = MAX_DIMENSION;
+          }
 
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: {
-            parts: [
-              {
-                inlineData: {
-                  data: base64String,
-                  mimeType: mimeType
-                }
-              },
-              {
-                text: "You are an expert OCR and translation assistant. Extract all the text from this image. Break it down into logical paragraphs, and then break each paragraph into sentences. For each sentence, provide a high-quality Chinese translation. Return the result strictly as a JSON object matching the schema. If there is no text, return a title 'No Text Found' and an empty paragraphs array."
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error("Could not get canvas context"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          // Compress to JPEG with 0.8 quality
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(dataUrl.split(',')[1]);
+        };
+        img.onerror = () => reject(new Error("Failed to load image for resizing"));
+        img.src = URL.createObjectURL(file);
+      });
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: resizedBase64,
+                mimeType: 'image/jpeg'
               }
-            ]
-          },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING, description: "A suitable title for the extracted text" },
-                paragraphs: {
+            },
+            {
+              text: "You are an expert OCR and translation assistant. Extract all the text from this image. Break it down into logical paragraphs, and then break each paragraph into sentences. For each sentence, provide a high-quality Chinese translation. Return the result strictly as a JSON object matching the schema. If there is no text, return a title 'No Text Found' and an empty paragraphs array."
+            }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING, description: "A suitable title for the extracted text" },
+              paragraphs: {
+                type: Type.ARRAY,
+                items: {
                   type: Type.ARRAY,
                   items: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        id: { type: Type.STRING, description: "A unique ID like s1, s2, etc." },
-                        text: { type: Type.STRING, description: "The English sentence" },
-                        translation: { type: Type.STRING, description: "The Chinese translation of the sentence" }
-                      },
-                      required: ["id", "text", "translation"]
-                    }
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING, description: "A unique ID like s1, s2, etc." },
+                      text: { type: Type.STRING, description: "The English sentence" },
+                      translation: { type: Type.STRING, description: "The Chinese translation of the sentence" }
+                    },
+                    required: ["id", "text", "translation"]
                   }
                 }
-              },
-              required: ["title", "paragraphs"]
-            }
+              }
+            },
+            required: ["title", "paragraphs"]
           }
-        });
-
-        clearInterval(progressInterval);
-        setProgress(100);
-        
-        if (response.text) {
-          const parsedData = JSON.parse(response.text);
-          setArticleData(parsedData);
-          if (parsedData.paragraphs && parsedData.paragraphs.length > 0 && parsedData.paragraphs[0].length > 0) {
-            setActiveSentenceId(parsedData.paragraphs[0][0].id);
-          }
-          
-          setTimeout(() => {
-            setUploadStatus('idle');
-            setAppState('reading');
-          }, 500);
-        } else {
-          throw new Error("No response text");
         }
-      } catch (error) {
-        console.error('OCR Error:', error);
-        clearInterval(progressInterval);
-        setUploadStatus('error');
+      });
+
+      clearInterval(progressInterval);
+      setProgress(100);
+      
+      if (response.text) {
+        const parsedData = JSON.parse(response.text);
+        setArticleData(parsedData);
+        if (parsedData.paragraphs && parsedData.paragraphs.length > 0 && parsedData.paragraphs[0].length > 0) {
+          setActiveSentenceId(parsedData.paragraphs[0][0].id);
+        }
+        
+        setTimeout(() => {
+          setUploadStatus('idle');
+          setAppState('reading');
+        }, 500);
+      } else {
+        throw new Error("No response text from AI");
       }
-    };
-    reader.onerror = () => {
-      console.error('File reading error');
+    } catch (error: any) {
+      console.error('OCR Error:', error);
+      setUploadError(error?.message || String(error));
       clearInterval(progressInterval);
       setUploadStatus('error');
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -575,6 +599,9 @@ export default function App() {
                       <AlertCircle className="w-8 h-8" />
                     </div>
                     <p className="text-lg font-semibold text-slate-700">Failed to process image</p>
+                    {uploadError && (
+                      <p className="text-sm text-red-500 max-w-md mx-auto">{uploadError}</p>
+                    )}
                     <button 
                       onClick={resetUpload}
                       className="mt-2 px-6 py-2 bg-white border border-slate-200 text-slate-600 font-medium rounded-xl hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
