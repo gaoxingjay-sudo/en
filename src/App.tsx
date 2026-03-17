@@ -229,17 +229,19 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [
-          {
-            inlineData: {
-              data: base64data,
-              mimeType: mimeType
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: base64data,
+                mimeType: mimeType
+              }
+            },
+            {
+              text: `Listen to this audio and compare it to the target text: "${targetText}". Evaluate the pronunciation. Return a JSON object with: "fluency" (A, B, C, D, or F), "accuracy" (0-100 number), and "tempo" (Slow, Good, or Fast).`
             }
-          },
-          {
-            text: `Listen to this audio and compare it to the target text: "${targetText}". Evaluate the pronunciation. Return a JSON object with: "fluency" (A, B, C, D, or F), "accuracy" (0-100 number), and "tempo" (Slow, Good, or Fast).`
-          }
-        ],
+          ]
+        },
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -284,9 +286,9 @@ export default function App() {
       setProgress((prev) => (prev < 90 ? prev + Math.floor(Math.random() * 10) : prev));
     }, 300);
 
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
         const base64DataUrl = reader.result as string;
         const base64String = base64DataUrl.split(',')[1];
         const mimeType = file.type;
@@ -295,17 +297,19 @@ export default function App() {
         
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: [
-            {
-              inlineData: {
-                data: base64String,
-                mimeType: mimeType
+          contents: {
+            parts: [
+              {
+                inlineData: {
+                  data: base64String,
+                  mimeType: mimeType
+                }
+              },
+              {
+                text: "You are an expert OCR and translation assistant. Extract all the text from this image. Break it down into logical paragraphs, and then break each paragraph into sentences. For each sentence, provide a high-quality Chinese translation. Return the result strictly as a JSON object matching the schema. If there is no text, return a title 'No Text Found' and an empty paragraphs array."
               }
-            },
-            {
-              text: "You are an expert OCR and translation assistant. Extract all the text from this image. Break it down into logical paragraphs, and then break each paragraph into sentences. For each sentence, provide a high-quality Chinese translation. Return the result strictly as a JSON object matching the schema. If there is no text, return a title 'No Text Found' and an empty paragraphs array."
-            }
-          ],
+            ]
+          },
           config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -350,13 +354,18 @@ export default function App() {
         } else {
           throw new Error("No response text");
         }
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error('OCR Error:', error);
+      } catch (error) {
+        console.error('OCR Error:', error);
+        clearInterval(progressInterval);
+        setUploadStatus('error');
+      }
+    };
+    reader.onerror = () => {
+      console.error('File reading error');
       clearInterval(progressInterval);
       setUploadStatus('error');
-    }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
