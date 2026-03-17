@@ -1,0 +1,7 @@
+{
+  "name": "LinguScan Reader",
+  "description": "English learning app with OCR, TTS, and pronunciation scoring",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
