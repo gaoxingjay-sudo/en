@@ -229,6 +229,9 @@ export default function App() {
       });
 
       const mimeType = blob.type || 'audio/webm';
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("API Key is missing. If you deployed this app manually, please ensure you set the GEMINI_API_KEY environment variable in your hosting platform (e.g., Vercel, Netlify) BEFORE building the app.");
+      }
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -278,7 +281,8 @@ export default function App() {
         // Not a JSON string
       }
       if (errorMessage.includes('API key not valid')) {
-        errorMessage = "Invalid API Key. Please check your Gemini API key in the Settings menu.";
+        const keyPrefix = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 4) + '...' : 'empty';
+        errorMessage = `Invalid API Key (starts with ${keyPrefix}). Please ensure you are using a valid Gemini API key from https://aistudio.google.com/app/apikey. If deployed manually, check your environment variables.`;
       }
       setScoringError(errorMessage);
       setScores({ fluency: 'Err', accuracy: 'Err', tempo: 'Err' });
@@ -339,6 +343,9 @@ export default function App() {
         img.src = URL.createObjectURL(file);
       });
 
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("API Key is missing. If you deployed this app manually, please ensure you set the GEMINI_API_KEY environment variable in your hosting platform (e.g., Vercel, Netlify) BEFORE building the app.");
+      }
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       const response = await ai.models.generateContent({
@@ -414,7 +421,8 @@ export default function App() {
       }
       
       if (errorMessage.includes('API key not valid')) {
-        errorMessage = "Invalid API Key. Please check your Gemini API key in the Settings menu.";
+        const keyPrefix = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 4) + '...' : 'empty';
+        errorMessage = `Invalid API Key (starts with ${keyPrefix}). Please ensure you are using a valid Gemini API key from https://aistudio.google.com/app/apikey. If deployed manually, check your environment variables.`;
       }
       
       setUploadError(errorMessage);
