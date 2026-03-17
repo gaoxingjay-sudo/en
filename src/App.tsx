@@ -57,6 +57,7 @@ export default function App() {
   const [userAudioUrl, setUserAudioUrl] = useState<string | null>(null);
   const [isScoring, setIsScoring] = useState(false);
   const [scores, setScores] = useState({ fluency: '-', accuracy: '-', tempo: '-' });
+  const [scoringError, setScoringError] = useState<string>('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -191,6 +192,7 @@ export default function App() {
       recorder.start();
       setIsRecording(true);
       setUserAudioUrl(null);
+      setScoringError('');
       setScores({ fluency: '-', accuracy: '-', tempo: '-' });
     } catch (e) {
       console.error("Mic error", e);
@@ -264,8 +266,21 @@ export default function App() {
           tempo: result.tempo || 'N/A'
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Scoring error", e);
+      let errorMessage = e?.message || String(e);
+      try {
+        const parsedError = JSON.parse(errorMessage);
+        if (parsedError.error && parsedError.error.message) {
+          errorMessage = parsedError.error.message;
+        }
+      } catch (parseError) {
+        // Not a JSON string
+      }
+      if (errorMessage.includes('API key not valid')) {
+        errorMessage = "Invalid API Key. Please check your Gemini API key in the Settings menu.";
+      }
+      setScoringError(errorMessage);
       setScores({ fluency: 'Err', accuracy: 'Err', tempo: 'Err' });
     } finally {
       setIsScoring(false);
@@ -276,7 +291,8 @@ export default function App() {
     if (!file) return;
     
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file (JPG, PNG, WEBP) for OCR.');
+      setUploadError('Please upload an image file (JPG, PNG, WEBP) for OCR.');
+      setUploadStatus('error');
       return;
     }
 
@@ -386,7 +402,22 @@ export default function App() {
       }
     } catch (error: any) {
       console.error('OCR Error:', error);
-      setUploadError(error?.message || String(error));
+      let errorMessage = error?.message || String(error);
+      try {
+        // Try to parse JSON error message from Gemini API
+        const parsedError = JSON.parse(errorMessage);
+        if (parsedError.error && parsedError.error.message) {
+          errorMessage = parsedError.error.message;
+        }
+      } catch (e) {
+        // Not a JSON string, use as is
+      }
+      
+      if (errorMessage.includes('API key not valid')) {
+        errorMessage = "Invalid API Key. Please check your Gemini API key in the Settings menu.";
+      }
+      
+      setUploadError(errorMessage);
       clearInterval(progressInterval);
       setUploadStatus('error');
     }
@@ -898,6 +929,11 @@ export default function App() {
                     <div className="text-xl font-bold text-amber-700">{isScoring ? '...' : scores.tempo}</div>
                   </div>
                 </div>
+                {scoringError && (
+                  <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-600 text-center">
+                    {scoringError}
+                  </div>
+                )}
               </div>
             </section>
           </aside>
